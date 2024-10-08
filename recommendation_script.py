@@ -7,6 +7,7 @@ from tqdm import tqdm
 from spotipy.oauth2 import SpotifyOAuth
 from dotenv import load_dotenv
 
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -258,31 +259,87 @@ def create_playlist_and_add_tracks(spotifyObject, track_ids, original_playlist_n
     return new_playlist["external_urls"]["spotify"]
 
 
+def add_tracks_to_playlist(spotifyObject, playlist_id, track_ids):
+    print(f"Adding tracks to playlist '{playlist_id}'...")
+    limit = 100
+    total_batches = (len(track_ids) + limit - 1) // limit
+    with tqdm(total=len(track_ids), desc="Tracks added to playlist", unit="track") as pbar:
+        for i in range(0, len(track_ids), limit):
+            batch = track_ids[i : i + limit]
+            spotifyObject.playlist_add_items(playlist_id=playlist_id, items=batch)
+            pbar.update(len(batch))
+    print("Tracks successfully added to the playlist.\n")
+
+
 # Main execution
 if __name__ == "__main__":
-    original_playlist_name = input("Enter the name of the playlist to extend: ")
+    original_playlist_name = "Liked Songs"
 
-    # Get original playlist and its tracks
-    playlist = get_playlist_by_name(spotifyObject, original_playlist_name)
-    track_ids = get_playlist_tracks(spotifyObject, playlist["id"], playlist["name"])
+    # Fetch Liked Songs
+    print("Fetching your Liked Songs playlist...")
+    track_ids = []
+    limit = 50
+    offset = 0
+    total = spotifyObject.current_user_saved_tracks(limit=1)["total"]
+    with tqdm(total=total, desc="Liked Songs fetched", unit="track") as pbar:
+        while True:
+            results = spotifyObject.current_user_saved_tracks(limit=limit, offset=offset)
+            for item in results["items"]:
+                track = item["track"]
+                if track:
+                    track_ids.append(track["id"])
+                pbar.update(1)
+            if len(results["items"]) < limit:
+                break
+            offset += limit
+    print(f"Total Liked Songs fetched: {len(track_ids)}\n")
     if not track_ids:
-        print("No tracks found in the original playlist. Exiting program...")
+        print("No Liked Songs found. Exiting program...")
         sys.exit(1)
 
     # Get audio features for tracks and calculate average criteria
     audio_features = get_audio_features(spotifyObject, track_ids)
     criteria = calculate_average_criteria(audio_features)
 
+    # Get seed tracks and artists
     seed_tracks, seed_artists = get_seed_tracks_and_artists(track_ids)
 
     # Generate recommendations based on criteria
-    recommendations = generate_recommendations(spotifyObject, criteria, seed_tracks, seed_artists, track_ids, limit=1000)
+    limit = 50
+    recommendations = generate_recommendations(spotifyObject, criteria, seed_tracks, seed_artists, track_ids, limit)
     if not recommendations:
         print("No recommendations found based on the criteria. Exiting program...")
         sys.exit(1)
 
-    # Create a new playlist
-    playlist_url = create_playlist_and_add_tracks(spotifyObject, recommendations, original_playlist_name)
+    # Update the same playlist every day
+    playlist_name = "[Mixer] Automated Radio Mix"
+    user_id = spotifyObject.current_user()["id"]
 
-    print(f"Extended playlist created successfully! You can view it here: {playlist_url}")
+    # Fetch the existing playlist
+    existing_playlist = None
+    playlists = spotifyObject.current_user_playlists(limit=50)
+    for playlist in playlists["items"]:
+        if playlist["name"] == playlist_name:
+            existing_playlist = playlist
+            break
+
+    if existing_playlist:
+        print(f"Adding new recommendations to existing playlist '{playlist_name}'...")
+        playlist_id = existing_playlist["id"]
+        # Fetch current tracks to avoid duplicates
+        current_tracks = []
+        results = spotifyObject.playlist_items(playlist_id, fields="items(track(id))", limit=100)
+        for item in results["items"]:
+            track = item["track"]
+            if track:
+                current_tracks.append(track["id"])
+        # Filter out any recommendations that are already in the playlist
+        new_tracks = [track for track in recommendations if track not in current_tracks]
+        # Add new recommendations to the playlist
+        add_tracks_to_playlist(spotifyObject, playlist_id, new_tracks)
+        print(f"New recommendations added to playlist '{playlist_name}'.\n")
+    else:
+        print(f"Playlist '{playlist_name}' not found. Exiting program...")
+        sys.exit(1)
+
     print("Process completed.")

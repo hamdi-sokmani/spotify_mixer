@@ -246,15 +246,30 @@ if __name__ == "__main__":
     print(f"Total tracks mixed: {len(mixed_tracks)}\n")
 
     # Create new playlist
-    playlist_name = "[Mixer] Automated Daily Mix"
-    playlist_description = "This playlist was created using the Mixer algorithm to combine tracks from your Daily Mix 1-6, On Repeat, Repeat Rewind, Radar des sorties, and Discover Weekly playlists."
-    print(f"Creating new playlist '{playlist_name}'...")
-    new_playlist = spotifyObject.user_playlist_create(
-        user=spotifyObject.current_user()["id"], name=playlist_name, public=False, description=playlist_description
-    )
-    print(f"Playlist '{playlist_name}' created successfully.\n")
+    playlist_name = "[Mixer] Automated Radio Mix"
+    playlist_description = "A mix of my favorite tracks from my Daily Mixes and other playlists."
 
-    add_tracks_to_playlist(spotifyObject, new_playlist["id"], mixed_tracks)
+    existing_playlist = None
+    user_id = spotifyObject.current_user()["id"]
+    playlists = spotifyObject.current_user_playlists(limit=50)
+    for playlist in playlists["items"]:
+        if playlist["name"] == playlist_name:
+            existing_playlist = playlist
+            break
+
+    if existing_playlist:
+        print(f"Updating existing playlist '{playlist_name}'...")
+        spotifyObject.playlist_replace_items(existing_playlist["id"], [])
+        playlist_id = existing_playlist["id"]
+    else:
+        print(f"Creating new playlist '{playlist_name}'...")
+        new_playlist = spotifyObject.user_playlist_create(
+            user=user_id, name=playlist_name, public=False, description=playlist_description
+        )
+        playlist_id = new_playlist["id"]
+        print(f"Playlist '{playlist_name}' created successfully.\n")
+
+    add_tracks_to_playlist(spotifyObject, playlist_id, mixed_tracks)
 
     print(f"Mixed tracks successfully uploaded to playlist '{playlist_name}'.")
     print("Process completed.")
