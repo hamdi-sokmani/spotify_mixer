@@ -1,0 +1,4 @@
+spotipy==2.24.0
+python-dotenv==1.0.1
+tqdm==4.66.5
+pip-system-certs==4.0 # For SSL certificate verification
